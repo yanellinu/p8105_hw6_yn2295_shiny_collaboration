@@ -19,6 +19,7 @@ library(viridis)
 library(plotly)
 library(ggridges)
 library(ggthemes)
+library(rsconnect)
 ```
 
 ```{r accessing_and_cleaning_data}
