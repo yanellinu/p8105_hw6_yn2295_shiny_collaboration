@@ -1,0 +1,148 @@
+---
+title: "Restaurant ratings in NYC"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: row
+  runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(ggplot2)
+library(shiny)
+library(tidyverse)
+library(janitor)
+library(stringr)
+library(forcats)
+library(tidytext)
+library(viridis)
+library(plotly)
+library(ggridges)
+library(ggthemes)
+```
+
+```{r accessing_and_cleaning_data}
+nyc_inspections = read_csv("./data/DOHMH_New_York_City_Restaurant_Inspection_Results.csv.gz", 
+                           col_types = cols(building = col_character()),
+                           na = c("NA", "N/A")) %>% 
+  filter(grade %in% c("A", "B", "C")) %>% 
+  mutate(inspection_num = row_number(),
+         boro = str_to_title(boro)) %>% 
+  select(inspection_num, boro, grade, score, critical_flag, dba, cuisine_description, zipcode, 
+  violation_description)
+
+inspection_words = nyc_inspections %>% 
+  unnest_tokens(word, violation_description)
+
+data(stop_words) #loading stop words dataset
+
+inspection_words = 
+  anti_join(inspection_words, stop_words) #to remove them is opposite of a join from these two datasets (removing any overlap)
+
+word_ratios = inspection_words %>%
+  filter(boro %in% c("Brooklyn", "Manhattan")) %>% 
+  count(word, boro) %>%
+  group_by(word) %>% 
+  filter(sum(n) >= 5) %>% #within word calculate the sums and remove anything less than 5
+  ungroup() %>%
+  spread(boro, n, fill = 0) %>% #spread it out to calculate odds ratios
+  mutate(
+    Manhattan_odds = (Manhattan + 1) / (sum(Manhattan) + 1),
+    Brooklyn_odds = (Brooklyn + 1) / (sum(Brooklyn) + 1),
+    log_OR = log(Manhattan_odds / Brooklyn_odds)
+  ) %>% #computing odds ratios
+  arrange(desc(log_OR)) 
+
+bing_sentiments = get_sentiments("bing") #positive or negative sentiments
+
+inspection_sentiments = inspection_words %>% 
+  inner_join(., bing_sentiments) %>% #merge everything that overlaps with 2 datasets and keep only that
+  count(inspection_num, sentiment) %>% #counting pos and neg words in each inspection
+  spread(sentiment, n, fill = 0) %>% #spreading the data back out to get... 
+  mutate(sentiment = positive - negative) %>% #a total score
+  select(inspection_num, sentiment)
+
+inspection_sentiments = 
+  right_join(nyc_inspections, inspection_sentiments, 
+             by = "inspection_num")
+```
+
+
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+```{r sidebar}
+
+grade_choice = nyc_inspections %>%  distinct(grade) %>%
+  pull()
+
+#radioButtons widget
+radioButtons("grade_choice", label = h3("Choose grade"),
+             choices = grade_choice,
+             selected = "A")
+
+boro_choice = nyc_inspections %>%  distinct(boro) %>%
+  pull()
+
+#selectInput widget
+selectInput("boro_choice", label = h3("Choose boro"),
+             choices = boro_choice,
+             selected = "Manhattan")
+
+
+```
+
+Row {.tabset .tabset-fade}
+-----------------------------------------------------------------------
+
+### Restaurant scores by boro depending on rating
+
+```{r}
+renderPlotly({nyc_inspections %>%
+   filter(grade == input$grade_choice) %>% 
+   plot_ly(y = ~score, x = ~boro, color = ~boro, type = "box",
+          colors = "Set2")
+   })
+```
+
+Row {.tabset .tabset-fade}
+-----------------------------------------------------------------------
+
+### Amount of restaurant types based on boro
+
+```{r}
+renderPlotly({
+  nyc_inspections %>% 
+  filter(boro == input$boro_choice) %>%
+  group_by(dba) %>%
+  mutate(restaurant_sum = n()) %>% 
+  top_n(10) %>% 
+  plot_ly(x = ~cuisine_description, y = ~restaurant_sum, 
+          type = "scatter", mode = "markers") %>%
+     layout(xaxis = list(title = "Cuisine Description",
+                      showticklabels = TRUE,
+                      tickangle = 45),
+                      margin = list(b = 48),
+        yaxis = list(title = "Number of Restuarants"))
+})
+```
+
+### Odds ratio of words in brooklyn compared to Manhattan restaurant inspections
+
+```{r}
+renderPlotly({
+  word_ratios %>%
+  mutate(pos_log_OR = ifelse(log_OR > 0, "Manhattan > Brooklyn", "Brooklyn > Manhattan")) %>% 
+  group_by(pos_log_OR) %>%
+  top_n(15, abs(log_OR)) %>% 
+  ungroup() %>%
+  mutate(word = fct_reorder(word, log_OR)) %>% 
+  plot_ly(x = ~word, y = ~log_OR, color = ~pos_log_OR, type = "bar") %>% 
+  layout(xaxis = list(title = "Word",
+                      showticklabels = TRUE,
+                      tickangle = 45),
+                      margin = list(b = 48),
+         yaxis = list(title = "Log of Odds Ratio"))
+})
+```
+
