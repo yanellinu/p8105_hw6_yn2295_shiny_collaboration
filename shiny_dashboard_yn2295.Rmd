@@ -3,7 +3,7 @@ title: "Restaurant ratings in NYC"
 output: 
   flexdashboard::flex_dashboard:
     orientation: row
-  runtime: shiny
+runtime: shiny
 ---
 
 ```{r setup, include=FALSE}
@@ -29,43 +29,32 @@ nyc_inspections = read_csv("./data/DOHMH_New_York_City_Restaurant_Inspection_Res
   filter(grade %in% c("A", "B", "C")) %>% 
   mutate(inspection_num = row_number(),
          boro = str_to_title(boro)) %>% 
-  select(inspection_num, boro, grade, score, critical_flag, dba, cuisine_description, zipcode, 
+  select(inspection_num, boro, grade, score, -critical_flag, dba, cuisine_description, -zipcode, 
   violation_description)
 
 inspection_words = nyc_inspections %>% 
   unnest_tokens(word, violation_description)
 
-data(stop_words) #loading stop words dataset
+data(stop_words)
 
 inspection_words = 
-  anti_join(inspection_words, stop_words) #to remove them is opposite of a join from these two datasets (removing any overlap)
+  anti_join(inspection_words, stop_words) 
 
 word_ratios = inspection_words %>%
   filter(boro %in% c("Brooklyn", "Manhattan")) %>% 
   count(word, boro) %>%
   group_by(word) %>% 
-  filter(sum(n) >= 5) %>% #within word calculate the sums and remove anything less than 5
+  filter(sum(n) >= 5) %>% 
   ungroup() %>%
-  spread(boro, n, fill = 0) %>% #spread it out to calculate odds ratios
+  spread(boro, n, fill = 0) %>% 
   mutate(
     Manhattan_odds = (Manhattan + 1) / (sum(Manhattan) + 1),
     Brooklyn_odds = (Brooklyn + 1) / (sum(Brooklyn) + 1),
     log_OR = log(Manhattan_odds / Brooklyn_odds)
-  ) %>% #computing odds ratios
+  ) %>% 
   arrange(desc(log_OR)) 
 
-bing_sentiments = get_sentiments("bing") #positive or negative sentiments
 
-inspection_sentiments = inspection_words %>% 
-  inner_join(., bing_sentiments) %>% #merge everything that overlaps with 2 datasets and keep only that
-  count(inspection_num, sentiment) %>% #counting pos and neg words in each inspection
-  spread(sentiment, n, fill = 0) %>% #spreading the data back out to get... 
-  mutate(sentiment = positive - negative) %>% #a total score
-  select(inspection_num, sentiment)
-
-inspection_sentiments = 
-  right_join(nyc_inspections, inspection_sentiments, 
-             by = "inspection_num")
 ```
 
 

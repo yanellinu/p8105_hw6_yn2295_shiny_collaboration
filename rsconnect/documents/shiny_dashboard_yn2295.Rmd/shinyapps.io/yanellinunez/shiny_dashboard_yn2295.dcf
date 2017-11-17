@@ -4,7 +4,7 @@ username:
 account: yanellinunez
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
-appId: 236746
-bundleId: 1081204
+appId: 236804
+bundleId: 1081418
 url: https://yanellinunez.shinyapps.io/shiny_dashboard_yn2295/
-when: 1510931243.09567
+when: 1510938060.55161
